@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Misc
+.DS_Store
+*.pem
+.vscode
+*.ipynb
+__pycache__/
+*.pyc
+
+# env files
+.env*.local
+.env
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
