@@ -1,12 +1,12 @@
 import * as React from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Progress } from "@/components/ui/progress"
-import { Slider } from "@/components/ui/slider"
+import { Button } from "components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "components/ui/card"
+import { Input } from "components/ui/input"
+import { ScrollArea } from "components/ui/scroll-area"
+import { Progress } from "components/ui/progress"
+import { Slider } from "components/ui/slider"
 import { Bot, Send, User, Loader2, Brain } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "lib/utils"
 
 interface Message {
   type: 'bot' | 'user'
@@ -14,9 +14,17 @@ interface Message {
 }
 
 interface Answer {
-  question: string
-  answer: string | number
-  category?: string
+  category: string
+  questionIndex: number
+  rating: number
+}
+
+interface UserProfile {
+  name: string
+  industry: string
+  numberOfEmployees: number
+  assessmentType?: 'quick' | 'detailed'
+  role?: string
 }
 
 interface SessionState {
@@ -25,75 +33,307 @@ interface SessionState {
   answers: Answer[]
   totalScore: number
   isComplete: boolean
-  email?: string
-  scores?: Array<{ category: string, points: number, maxPoints: number }>
-}
-
-interface Choice {
-  label: string
-  value: string
-}
-
-interface QuestionType {
-  type: 'choice' | 'rating' | 'final'
-  choices?: Choice[]
-  showSkip?: boolean
+  userProfile?: UserProfile
+  questions?: {
+    question: string
+    category: string
+  }[]
 }
 
 interface DigitalFitCheckProps {
-  sessionState: any; // Replace 'any' with your actual session state type
-  setSessionState: (state: any) => void;
-  message: string;
-  setMessage: (message: string) => void;
+  sessionState: SessionState
+  setSessionState: (state: SessionState) => void
+  message: string
+  setMessage: (message: string) => void
 }
 
-export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({ 
-  sessionState, 
-  setSessionState, 
-  message, 
-  setMessage 
+export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
+  sessionState,
+  setSessionState,
+  message,
+  setMessage
 }) => {
   const [messages, setMessages] = React.useState<Message[]>([])
-  const [currentView, setCurrentView] = React.useState<'role' | 'rating' | 'email'>('role')
-  const [sliderValue, setSliderValue] = React.useState(3)
   const [isLoading, setIsLoading] = React.useState(false)
-  const [input, setInput] = React.useState('')
+  const [currentStep, setCurrentStep] = React.useState<'welcome' | 'name' | 'industry' | 'employees' | 'assessment-type' | 'questions' | 'complete'>('welcome')
+  const [selectedRating, setSelectedRating] = React.useState<number | null>(null)
+  const [userProfile, setUserProfile] = React.useState<UserProfile>({
+    name: '',
+    industry: '',
+    numberOfEmployees: 0
+  })
 
-  const scrollAreaRef = React.useRef<HTMLDivElement>(null)
+  // Speichere die Fragen im State
+  const [questions, setQuestions] = React.useState<SessionState['questions']>([])
 
-  // Vereinfachte initiale Nachricht
+  // Initiale Willkommensnachricht
   React.useEffect(() => {
     setMessages([{
       type: 'bot',
-      content: 'Willkommen beim Digital Fit Check! 🎉 Finden Sie heraus, wie digital Ihr Unternehmen bereits aufgestellt ist.'
+      content: 'Willkommen beim Digital Fit Check! 👋\n\nIch führe Sie durch eine kurze Analyse Ihres Digitalisierungsgrads. Dafür brauche ich zunächst ein paar Informationen von Ihnen.\n\nWie ist Ihr Name?'
     }])
   }, [])
 
-  // Füge diese Funktion hinzu
-  const scrollToBottom = () => {
-    if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]')
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight
+  const handleStart = async () => {
+    setCurrentStep('name')
+    setMessages(prev => [...prev, {
+      type: 'bot',
+      content: 'Wie ist Ihr Name? 😊'
+    }])
+  }
+
+  const handleUserInput = async (input: string) => {
+    if (!input.trim()) return;
+    
+    setIsLoading(true)
+    try {
+      switch (currentStep) {
+        case 'name':
+          setUserProfile(prev => ({ ...prev, name: input }))
+          setCurrentStep('industry')
+          setMessages(prev => [...prev,
+            { type: 'user', content: input },
+            { type: 'bot', content: `Hallo ${input}! 👋 In welcher Branche sind Sie tätig? 🏢` }
+          ])
+          break
+
+        case 'industry':
+          setUserProfile(prev => ({ ...prev, industry: input }))
+          setCurrentStep('employees')
+          setMessages(prev => [...prev,
+            { type: 'user', content: input },
+            { type: 'bot', content: `${input}, spannend! 🎯 Wie viele Mitarbeiter hat Ihr Unternehmen? 👥` }
+          ])
+          break
+
+        case 'employees':
+          const employees = parseInt(input)
+          if (isNaN(employees)) {
+            setMessages(prev => [...prev,
+              { type: 'user', content: input },
+              { type: 'bot', content: 'Ups! Bitte geben Sie eine gültige Zahl ein. 🔢' }
+            ])
+            break
+          }
+
+          setUserProfile(prev => ({ ...prev, numberOfEmployees: employees }))
+          setCurrentStep('assessment-type')
+          setMessages(prev => [...prev,
+            { type: 'user', content: input },
+            { type: 'bot', content: 'Super, danke! 🌟 Wählen Sie bitte die gewünschte Analyse-Tiefe:\n\n' +
+              '⚡ **Express-Analyse (ca. 5 Minuten)**\n' +
+              '- 🎯 Schnelle Einschätzung Ihres Digitalisierungsgrads\n' +
+              '- 🔍 Fokus auf die wichtigsten Kernbereiche\n\n' +
+              '🔮 **Detail-Analyse (10-15 Minuten)**\n' +
+              '- 📊 Umfassende Bewertung aller Digitalisierungsbereiche\n' +
+              '- 💡 Ausführliche Handlungsempfehlungen\n\n' +
+              '✨ In beiden Fällen erhalten Sie:\n' +
+              '📈 Ihren Digitalisierungsgrad im Branchenvergleich\n' +
+              '💪 Eine übersichtliche SWOT-Analyse\n' +
+              '🎯 Konkrete Handlungsempfehlungen\n' +
+              '🚀 Entwicklungspotenziale für Ihr Unternehmen' }
+          ])
+          break
+
+        case 'assessment-type':
+          if (!['express', 'detail'].includes(input.toLowerCase())) {
+            setMessages(prev => [...prev,
+              { type: 'user', content: input },
+              { type: 'bot', content: 'Hoppla! 😅 Bitte wählen Sie "Express" für die Express-Analyse oder "Detail" für die Detail-Analyse.' }
+            ])
+            break
+          }
+
+          const assessmentType = input.toLowerCase() === 'express' ? 'quick' : 'detailed' as const
+          
+          const updatedProfile: UserProfile = {
+            name: userProfile.name.trim(),
+            industry: userProfile.industry.trim(),
+            numberOfEmployees: Number(userProfile.numberOfEmployees),
+            assessmentType: assessmentType as 'quick' | 'detailed',
+            role: 'unternehmer'
+          };
+
+          if (!updatedProfile.name || !updatedProfile.industry || isNaN(updatedProfile.numberOfEmployees)) {
+            throw new Error('Bitte füllen Sie alle Felder korrekt aus.');
+          }
+
+          const requestData = {
+            type: 'INIT_QUESTIONS',
+            userProfile: updatedProfile
+          };
+
+          const response = await fetch('/api/digital-fit-check', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+          });
+
+          const data = await response.json();
+
+          if (!data.success || !data.session) {
+            throw new Error('Fehler beim Laden der Fragen.');
+          }
+
+          const newSessionState: SessionState = {
+            ...data.session,
+            currentCategory: 0,
+            currentQuestion: 0,
+            answers: [],
+            totalScore: 0,
+            isComplete: false,
+            questions: data.session.questions || []
+          };
+
+          setSessionState(newSessionState);
+
+          // Zeige die erste Frage an
+          if (data.session.questions && data.session.questions.length > 0) {
+            setMessages(prev => [...prev, 
+              { type: 'user', content: input },
+              { type: 'bot', content: data.session.questions[0].question }
+            ]);
+            setQuestions(data.session.questions);
+          }
+
+          setCurrentStep('questions');
+          break;
       }
+    } catch (error) {
+      console.error('Error:', error)
+      setMessages(prev => [...prev, {
+        type: 'bot',
+        content: `❌ ${error instanceof Error ? error.message : 'Ein unerwarteter Fehler ist aufgetreten.'}` 
+      }]);
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  // Aktualisiere den useEffect für das Scrolling
-  React.useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+  const handleRatingSelect = async (rating: number) => {
+    console.log('Rating selected:', rating);
+    
+    if (!sessionState?.questions) {
+      console.error('No questions available');
+      return;
+    }
 
-  // Vereinfachtes renderCurrentView
+    const currentQuestion = sessionState.questions[sessionState.currentQuestion];
+    if (!currentQuestion) {
+      console.error('Invalid question index');
+      return;
+    } 
+
+    setSelectedRating(rating);
+
+    const currentAnswer: Answer = {
+      category: currentQuestion.category,
+      questionIndex: sessionState.currentQuestion,
+      rating: rating
+    };
+
+    // Update session state with new answer
+    const updatedAnswers = [...sessionState.answers, currentAnswer];
+    const nextQuestionIndex = sessionState.currentQuestion + 1;
+    const isComplete = nextQuestionIndex >= (sessionState.questions?.length || 0);
+
+    const newSessionState: SessionState = {
+      ...sessionState,
+      answers: updatedAnswers,
+      currentQuestion: nextQuestionIndex,
+      isComplete: isComplete
+    };
+
+    setSessionState(newSessionState);
+
+    // Automatically trigger submit after rating selection
+    handleSubmit(rating);
+  };
+
+  const handleSubmit = async (rating: number) => {
+    console.log('Submit clicked');
+    
+    try {
+      setIsLoading(true);
+
+      if (sessionState.isComplete) {
+        // Sende finale Auswertung
+        const response = await fetch('/api/digital-fit-check', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'COMPLETE',
+            sessionState: sessionState
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Fehler beim Abschließen der Bewertung');
+        }
+
+        const result = await response.json();
+        
+        setMessages(prev => [...prev,
+          { type: 'user', content: `${rating} Sterne` },
+          { type: 'bot', content: '🎉 Vielen Dank für Ihre Teilnahme! Ihre Ergebnisse werden jetzt ausgewertet...' }
+        ]);
+
+        setCurrentStep('complete');
+      } else {
+        // Show next question
+        const nextQuestion = sessionState.questions?.[sessionState.currentQuestion];
+        if (nextQuestion) {
+          setMessages(prev => [...prev,
+            { type: 'user', content: `${rating} Sterne` },
+            { type: 'bot', content: nextQuestion.question }
+          ]);
+        }
+      }
+
+      // Reset rating selection
+      setSelectedRating(null);
+    } catch (error) {
+      console.error('Error during submission:', error);
+      setMessages(prev => [...prev, {
+        type: 'bot',
+        content: `❌ ${error instanceof Error ? error.message : 'Ein unerwarteter Fehler ist aufgetreten.'}`
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderAssessmentTypeButtons = () => {
+    if (currentStep !== 'assessment-type') return null;
+
+    return (
+      <div className="space-y-4">
+        <Button 
+          className="w-full"
+          onClick={() => handleUserInput('express')}
+        >
+          ⚡ Express-Analyse (5 Min.)
+        </Button>
+        <Button 
+          className="w-full"
+          onClick={() => handleUserInput('detail')}
+        >
+          🔮 Detail-Analyse (10-15 Min.)
+        </Button>
+      </div>
+    );
+  }
+
   const renderCurrentView = () => {
-    if (currentView === 'rating' && sessionState) {
-      return renderRatingSection()
-    } else if (currentView === 'email') {
-      return renderEmailCollection()
-    } else {
+    if (currentStep === 'welcome') {
       return (
         <div className="w-full flex justify-center">
-          <Button 
+          <Button
             className="w-full max-w-sm"
             onClick={handleStart}
             disabled={isLoading}
@@ -101,327 +341,89 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Wird geladen...
+                Wird geladen... ⌛
               </>
             ) : (
-              'Digital Fit Check starten'
+              '🚀 Digital Fit Check starten'
             )}
           </Button>
         </div>
       )
     }
-  }
 
-  // Neue handleStart Funktion
-  const handleStart = async () => {
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/digital-fit-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'INIT_QUESTIONS',
-          role: 'unternehmer',
-          sessionState: null
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Network response was not ok')
-      }
-
-      const data = await response.json()
-      
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: data.message
-      }])
-      
-      if (data.sessionState) {
-        setSessionState(data.sessionState)
-      }
-
-      setCurrentView('rating')
-    } catch (error) {
-      console.error('Error:', error)
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: 'Es tut mir leid, es gab einen Fehler. Bitte versuchen Sie es erneut.'
-      }])
-    } finally {
-      setIsLoading(false)
+    if (currentStep === 'assessment-type') {
+      return renderAssessmentTypeButtons()
     }
-  }
 
-  // Rating mit Slider
-  const renderRatingSection = () => {
-    return (
-      <div className="space-y-6 w-full">
+    if (currentStep === 'questions') {
+      const progress = sessionState.questions 
+        ? (sessionState.currentQuestion / sessionState.questions.length) * 100 
+        : 0;
+
+      return (
         <div className="space-y-4">
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Analog</span>
-              <span className="text-sm text-muted-foreground">Digitalisiert</span>
-            </div>
-            
-            <div className="flex justify-between gap-2">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <Button
-                  key={value}
-                  variant={sliderValue === value ? "default" : "outline"}
-                  onClick={() => setSliderValue(value)}
-                  className={cn(
-                    "flex-1 h-12 font-medium",
-                    sliderValue === value && "bg-black hover:bg-black/90 text-white"
-                  )}
-                >
-                  {value}
-                </Button>
-              ))}
-            </div>
-            
-            <div className="text-sm text-muted-foreground text-center">
-              {getRatingLabel(sliderValue)}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Progress 
-            value={calculateProgress()} 
-            className="h-2 bg-gray-100"
-          />
-          <p className="text-xs text-muted-foreground text-right">
-            {calculateProgress() === 0 ? "🚀 Los geht's!" : `${calculateProgress()}% geschafft! ${calculateProgress() === 100 ? "🎉" : "💪"}`}
+          <Progress value={progress} className="h-2" />
+          <p className="text-sm text-muted-foreground text-right">
+            {Math.round(progress)}% abgeschlossen
           </p>
+          
+          {sessionState.questions && sessionState.questions[sessionState.currentQuestion] && (
+            <>
+              <div className="text-lg font-medium">
+                {sessionState.questions[sessionState.currentQuestion].question}
+              </div>
+              <div className="flex justify-center space-x-4">
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <Button
+                    key={rating}
+                    onClick={() => handleRatingSelect(rating)}
+                    className={cn(
+                      "w-12 h-12",
+                      selectedRating === rating ? "bg-primary text-white" : "bg-secondary"
+                    )}
+                  >
+                    {rating}
+                  </Button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
-
-        <div className="flex justify-between gap-4">
-          <Button 
-            variant="outline" 
-            onClick={handleSkip}
-            className="w-full"
-          >
-            Weiß nicht / Überspringen
-          </Button>
-          <Button 
-            onClick={handleSubmitRating}
-            className="w-full bg-black hover:bg-black/90 text-white"
-          >
-            Bestätigen
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  // Füge diese neue Funktion für die Labels hinzu
-  const getRatingLabel = (value: number) => {
-    switch(value) {
-      case 1: return "Komplett analog"
-      case 2: return "Überwiegend analog"
-      case 3: return "Teilweise digitalisiert"
-      case 4: return "Überwiegend digitalisiert"
-      case 5: return "Vollständig digitalisiert"
-      default: return ""
+      )
     }
-  }
 
-  // Email-Sammlung am Ende
-  const renderEmailCollection = () => {
     return (
-      <div className="space-y-4 w-full">
-        <h3 className="text-lg font-medium">Ihre Analyse ist fertig!</h3>
-        <p className="text-sm text-muted-foreground">
-          Geben Sie Ihre E-Mail-Adresse ein, um Ihre personalisierte Auswertung zu erhalten.
-        </p>
+      <div className="space-y-4">
         <Input
-          type="email"
-          id="email"
-          name="email"
-          placeholder="ihre@email.de"
-          autoComplete="email"
-          onChange={(e) => setSessionState(prev => ({
-            ...prev,
-            email: e.target.value
-          }))}
+          className="w-full"
+          placeholder={
+            currentStep === 'name' ? 'Ihren Namen eingeben...' :
+            currentStep === 'industry' ? 'Ihre Branche eingeben...' :
+            'Anzahl der Mitarbeiter eingeben...'
+          }
+          type={currentStep === 'employees' ? 'number' : 'text'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+              handleUserInput(e.currentTarget.value)
+              e.currentTarget.value = ''
+            }
+          }}
         />
         <Button 
-          onClick={handleEmailSubmit}
-          className="w-full bg-black hover:bg-black/90 text-white"
+          className="w-full"
+          onClick={(e) => {
+            const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
+            if (input && input.value.trim()) {
+              handleUserInput(input.value)
+              input.value = ''
+            }
+          }}
         >
-          Auswertung anfordern
+          Weiter
         </Button>
       </div>
     )
   }
-
-  // Handler für das Absenden der Email
-  const handleEmailSubmit = async () => {
-    if (!sessionState?.email?.trim()) {
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: "Bitte geben Sie eine gültige E-Mail-Adresse ein."
-      }])
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/send-results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sessionState)
-      })
-      
-      const data = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Fehler beim Senden der E-Mail')
-      }
-
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: "Vielen Dank! Wir haben Ihnen die Auswertung per E-Mail zugesandt. 📧"
-      }])
-    } catch (error) {
-      console.error('Error sending results:', error)
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: error instanceof Error ? error.message : 'Fehler beim Senden der E-Mail. Bitte versuchen Sie es erneut.'
-      }])
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const calculateProgress = () => {
-    if (!sessionState) return 0
-    return Math.round((sessionState.currentCategory / 5) * 100)
-  }
-
-  const handleSend = async (message?: string) => {
-    if (!message?.trim()) return
-
-    const userMessage = { type: 'user' as const, content: message }
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setIsLoading(true)
-
-    try {
-      const response = await fetch('/api/digital-fit-check', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'SUBMIT_ANSWER',
-          answer: sliderValue,
-          sessionState: sessionState,
-          messages: messages.concat(userMessage).map(msg => ({
-            role: msg.type === 'user' ? 'user' : 'assistant',
-            content: msg.content
-          }))
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'API request failed')
-      }
-      
-      if (data.sessionState) {
-        setSessionState(data.sessionState)
-        // Wenn der Check abgeschlossen ist, zur E-Mail-Ansicht wechseln
-        if (data.sessionState.isComplete) {
-          setCurrentView('email')
-        }
-      }
-      
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: data.message
-      }])
-
-      // Reset slider value after successful submission
-      setSliderValue(3)
-      
-    } catch (error) {
-      console.error('Chat error:', error)
-      setMessages(prev => [...prev, {
-        type: 'bot',
-        content: error instanceof Error ? error.message : 'Es tut mir leid, es gab einen Fehler. Bitte versuchen Sie es erneut.'
-      }])
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleSkip = async () => {
-    try {
-      await handleSend('0')
-    } catch (error) {
-      console.error('Skip error:', error)
-    }
-  }
-
-  const getRatingFeedback = (value: number) => {
-    switch(value) {
-      case 1: return "🌱 Hier gibt es noch viel Potenzial für Wachstum!"
-      case 2: return "🌿 Sie haben erste Schritte gemacht!"
-      case 3: return "🌳 Sie sind auf einem guten Weg!"
-      case 4: return "⭐ Sie sind schon sehr gut aufgestellt!"
-      case 5: return "🌟 Fantastisch! Sie sind ein digitaler Vorreiter!"
-      default: return ""
-    }
-  }
-
-  const handleSubmitRating = async () => {
-    try {
-      await handleSend(`${sliderValue}`)
-    } catch (error) {
-      console.error('Rating submission error:', error)
-    }
-  }
-
-  // Enhance message display with avatars
-  const renderMessages = () => (
-    <div className="space-y-4">
-      {messages.map((message, index) => (
-        <div
-          key={index}
-          className={`flex items-start gap-3 ${
-            message.type === 'user' ? 'flex-row-reverse' : ''
-          }`}
-        >
-          <div
-            className={`p-2 rounded-full ${
-              message.type === 'user' 
-                ? 'bg-primary text-primary-foreground' 
-                : 'bg-muted'
-            }`}
-          >
-            {message.type === 'user' ? (
-              <User className="h-4 w-4" />
-            ) : (
-              <Bot className="h-4 w-4" />
-            )}
-          </div>
-          <div
-            className={`rounded-lg p-4 max-w-[80%] ${
-              message.type === 'user'
-                ? 'bg-primary text-primary-foreground ml-auto'
-                : 'bg-muted'
-            }`}
-          >
-            {message.content}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 
   return (
     <Card className="w-full max-w-2xl mx-auto">
@@ -435,12 +437,22 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
         </div>
       </CardHeader>
       <CardContent className="p-4">
-        <ScrollArea 
-          className="h-[400px]" 
-          ref={scrollAreaRef}
-        >
+        <ScrollArea className="h-[400px]">
           <div className="pr-4">
-            {renderMessages()}
+            {messages.map((message, index) => (
+              <div key={index} className={`flex items-start gap-3 mb-4 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`p-2 rounded-full ${message.type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                  {message.type === 'user' ? (
+                    <User className="h-4 w-4" />
+                  ) : (
+                    <Bot className="h-4 w-4" />
+                  )}
+                </div>
+                <div className={`rounded-lg p-4 max-w-[80%] ${message.type === 'user' ? 'bg-primary text-primary-foreground ml-auto' : 'bg-muted'}`}>
+                  {message.content}
+                </div>
+              </div>
+            ))}
             {isLoading && (
               <div className="flex items-center gap-2 text-muted-foreground mt-4">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -451,7 +463,7 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
         </ScrollArea>
       </CardContent>
       <CardFooter className="border-t p-4">
-        {!isLoading && (!sessionState || !sessionState.isComplete) && renderCurrentView()}
+        {!isLoading && renderCurrentView()}
         {isLoading && (
           <div className="flex items-center justify-center w-full gap-2 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -461,4 +473,4 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
       </CardFooter>
     </Card>
   )
-} 
+}

@@ -16,6 +16,16 @@ interface SessionState {
   totalScore: number
   isComplete: boolean
   scores?: { category: string; points: number; maxPoints: number }[]
+  userProfile: User
+  questions?: { question: string; category: string }[]
+}
+
+interface User {
+  name: string;
+  industry: string;
+  numberOfEmployees: number;
+  role: string;
+  assessmentType: 'quick' | 'detailed';
 }
 
 const CATEGORIES = [
@@ -62,7 +72,6 @@ Beispiele:
 Bewertungsskala: 1 = wenig integriert, 5 = vollständig integriert.`,
         category: "Digitale Strategie"
       }
-      // Fügen Sie weitere Fragen hinzu, falls erforderlich
     ],
     "Digitale Prozesse": [
       {
@@ -98,7 +107,6 @@ Beispiele:
 Bewertungsskala: 1 = keine Automatisierung, 5 = vollständige Automatisierung.`,
         category: "Digitale Prozesse"
       }
-      // Weitere Fragen...
     ],
     "Digitale Kundenbeziehung": [
       {
@@ -134,7 +142,6 @@ Beispiele:
 Bewertungsskala: 1 = keine Personalisierung, 5 = vollständig personalisiert.`,
         category: "Digitale Kundenbeziehung"
       }
-      // Weitere Fragen...
     ],
     "Digitale Geschäftsmodelle": [
       {
@@ -170,7 +177,6 @@ Beispiele:
 Bewertungsskala: 1 = nicht skalierbar, 5 = vollständig skalierbar.`,
         category: "Digitale Geschäftsmodelle"
       }
-      // Weitere Fragen...
     ],
     "Digitale Kompetenzen": [
       {
@@ -206,246 +212,101 @@ Beispiele:
 Bewertungsskala: 1 = gering, 5 = hoch.`,
         category: "Digitale Kompetenzen"
       }
-      // Weitere Fragen...
     ]
   }
 }
 
-const SYSTEM_PROMPTS = {
-  initial: `Du bist ein freundlicher Digital-Berater für Unternehmer.
-Format deiner Antworten:
-1. Stelle eine klare Frage zur aktuellen Kategorie (max. 2 Sätze)
-2. Gib 3 konkrete Beispiele für verschiedene Digitalisierungsgrade:
-   - Beispiel für Anfänger (1-2): "Sarah nutzt noch hauptsächlich Papierakten"
-   - Beispiel für Fortgeschrittene (3-4): "Thomas verwendet bereits Cloud-Lösungen"
-   - Beispiel für Experten (5): "Lisa arbeitet komplett digital"
-3. Erkläre die Bewertungsskala kurz (1-5)
-4. Füge max. 2 passende Emojis ein`,
+// Funktion zum Initialisieren einer neuen Session
+async function initializeSession({ userProfile, type }: { userProfile: User, type: 'quick' | 'detailed' }) {
+  const role = userProfile.role || 'unternehmer';
+  
+  // Sammle alle Fragen aus allen Kategorien
+  let allQuestions: { question: string; category: string }[] = [];
+  
+  Object.keys(QUESTIONS[role]).forEach(category => {
+    const categoryQuestions = type === 'quick'
+      ? QUESTIONS[role][category].filter((_, i) => i % 2 === 0)  // Nur jede zweite Frage für Express
+      : QUESTIONS[role][category];
+    
+    allQuestions = [...allQuestions, ...categoryQuestions];
+  });
 
-  nextQuestion: `Du bist ein freundlicher Digital-Berater für Unternehmer.
-Format deiner Antworten:
-1. Kurzes, ermutigendes Feedback zur letzten Antwort (1 Satz)
-2. Neue Frage mit 3 konkreten Beispielen wie oben
-3. Bewertungsskala (1-5)
-4. Max. 2 passende Emojis`,
+  const initialSessionState: SessionState = {
+    role: role,
+    currentCategory: 0,
+    currentQuestion: 0,
+    answers: [],
+    totalScore: 0,
+    isComplete: false,
+    questions: allQuestions,
+    userProfile: {
+      ...userProfile,
+      role
+    }
+  };
 
-  final: `Du bist ein freundlicher Digital-Berater für Unternehmer.
-Format deiner Antworten:
-1. Top-Stärke hervorheben (1 Satz)
-2. Wichtigstes Verbesserungspotential (1 Satz)
-3. Eine konkrete, priorisierte Handlungsempfehlung
-4. Positiver Abschluss mit einem Emoji`
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
-
-async function generateFinalAnalysis(role: string, answers: Answer[]) {
-  try {
-    // Formatiere die Antworten für die Analyse
-    const formattedAnswers = answers.map(ans => 
-      `Kategorie: ${ans.category}\nFrage: ${ans.question}\nBewertung: ${ans.answer}/5`
-    ).join('\n\n')
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "system",
-          content: `Du bist ein erfahrener Digital-Berater. Erstelle eine kurze, prägnante Analyse (max. 3 Sätze) basierend auf den Bewertungen. Hebe eine Stärke und eine Verbesserungsmöglichkeit hervor.`
-        },
-        {
-          role: "user",
-          content: formattedAnswers
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 300
-    })
-
-    return response.choices[0].message.content || "Analyse konnte nicht erstellt werden."
-  } catch (error) {
-    console.error('OpenAI API error:', error)
-    return "Entschuldigung, bei der Erstellung der Analyse ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut."
-  }
+  return initialSessionState;
 }
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  console.log('API Request received:', {
+    method: req.method,
+    body: req.body
+  });
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' })
+    console.log('Method not allowed:', req.method);
+    return res.status(405).json({ 
+      error: 'Method not allowed',
+      message: 'Diese Methode ist nicht erlaubt.'
+    });
   }
 
   try {
-    const { type, role = 'unternehmer', sessionState, answer } = req.body
+    const { type, userProfile } = req.body;
 
-    // Validiere den OpenAI API Key
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OpenAI API key is missing')
-      return res.status(500).json({ 
-        message: 'Server-Konfigurationsfehler: OpenAI API Key fehlt.'
-      })
+    console.log('Processing request with:', { type, userProfile });
+
+    // Validiere den Request-Typ
+    if (type !== 'INIT_QUESTIONS') {
+      return res.status(400).json({
+        error: 'Invalid request type',
+        message: 'Ungültiger Request-Typ.'
+      });
+    }
+
+    // Validiere das User-Profil
+    if (!userProfile) {
+      console.log('Missing user profile');
+      return res.status(400).json({ 
+        error: 'Missing user profile',
+        message: 'Benutzerprofil fehlt.'
+      });
     }
 
     if (type === 'INIT_QUESTIONS') {
-      const firstCategory = CATEGORIES[0]
-      const firstQuestion = QUESTIONS[role][firstCategory][0].question
-
-      const initialSessionState = {
-        role: role,
-        currentCategory: 0,
-        currentQuestion: 0,
-        answers: [],
-        totalScore: 0,
-        isComplete: false
-      }
-
+      // Initialisiere die Session mit den Fragen
+      const session = await initializeSession({ 
+        userProfile, 
+        type: userProfile.assessmentType 
+      });
+      
+      // Gebe die initialisierte Session zurück
       return res.status(200).json({
-        message: firstQuestion,
-        sessionState: initialSessionState
-      })
+        success: true,
+        session,
+        message: 'Session erfolgreich initialisiert.'
+      });
     }
-
-    if (type === 'SUBMIT_ANSWER') {
-      // Validiere Session State
-      if (!sessionState) {
-        console.error('Session state is missing')
-        return res.status(400).json({ 
-          message: 'Ungültiger Sitzungsstatus: Session State fehlt.' 
-        })
-      }
-
-      const currentSessionState = sessionState
-      if (currentSessionState.isComplete) {
-        return res.status(400).json({ 
-          message: 'Die Sitzung ist bereits abgeschlossen.' 
-        })
-      }
-
-      const { currentCategory, currentQuestion, answers } = currentSessionState
-      
-      // Validiere Kategorie
-      if (currentCategory >= CATEGORIES.length) {
-        console.error('Invalid category index:', currentCategory)
-        return res.status(400).json({ 
-          message: 'Ungültige Kategorie.' 
-        })
-      }
-      
-      const categoryName = CATEGORIES[currentCategory]
-      
-      // Validiere Fragen
-      if (!QUESTIONS['unternehmer'][categoryName]) {
-        console.error('Category questions not found:', categoryName)
-        return res.status(400).json({ 
-          message: 'Fragen für diese Kategorie nicht gefunden.' 
-        })
-      }
-      
-      const categoryQuestions = QUESTIONS['unternehmer'][categoryName]
-
-      // Validiere Antwort
-      const answerValue = parseInt(String(answer))
-      if (isNaN(answerValue) || answerValue < 0 || answerValue > 5) {
-        return res.status(400).json({ 
-          message: 'Bitte geben Sie eine Zahl zwischen 0 und 5 ein.' 
-        })
-      }
-
-      try {
-        // Punkte hinzufügen und Antwort speichern
-        const currentQuestionText = categoryQuestions[currentQuestion].question
-        const newAnswer: Answer = {
-          category: categoryName,
-          questionIndex: currentQuestion,
-          answer: answerValue,
-          question: currentQuestionText
-        }
-        const updatedAnswers = [...answers, newAnswer]
-        const updatedTotalScore = currentSessionState.totalScore + answerValue
-
-        // Bestimmen, ob es eine nächste Frage in der aktuellen Kategorie gibt
-        const nextQuestionIndex = currentQuestion + 1
-        if (nextQuestionIndex < categoryQuestions.length) {
-          const nextQuestion = categoryQuestions[nextQuestionIndex].question
-          const newSessionState: SessionState = {
-            ...currentSessionState,
-            currentQuestion: nextQuestionIndex,
-            answers: updatedAnswers,
-            totalScore: updatedTotalScore
-          }
-
-          return res.status(200).json({
-            message: `Sehr gut! 👍\n\n${nextQuestion}`,
-            sessionState: newSessionState
-          })
-        }
-
-        // Wechsel zur nächsten Kategorie
-        const nextCategoryIndex = currentCategory + 1
-        if (nextCategoryIndex < CATEGORIES.length) {
-          const nextCategory = CATEGORIES[nextCategoryIndex]
-          const nextCategoryFirstQuestion = QUESTIONS['unternehmer'][nextCategory][0].question
-          const newSessionState: SessionState = {
-            ...currentSessionState,
-            currentCategory: nextCategoryIndex,
-            currentQuestion: 0,
-            answers: updatedAnswers,
-            totalScore: updatedTotalScore
-          }
-
-          return res.status(200).json({
-            message: `Gut! Kommen wir zur Kategorie "${nextCategory}".\n\n${nextCategoryFirstQuestion}`,
-            sessionState: newSessionState
-          })
-        }
-
-        // Finale Analyse
-        let finalFeedback
-        try {
-          finalFeedback = await generateFinalAnalysis(currentSessionState.role, updatedAnswers)
-        } catch (error) {
-          console.error('Error generating final analysis:', error)
-          finalFeedback = "Ihre Antworten wurden erfolgreich ausgewertet. Eine detaillierte Analyse senden wir Ihnen per E-Mail zu."
-        }
-
-        const newSessionState: SessionState = {
-          ...currentSessionState,
-          answers: updatedAnswers,
-          totalScore: updatedTotalScore,
-          isComplete: true,
-          scores: updatedAnswers.map(answer => ({
-            category: answer.category,
-            points: answer.answer,
-            maxPoints: 5
-          }))
-        }
-
-        return res.status(200).json({
-          message: `🎉 Geschafft! Ihr Digital Fit Check ist abgeschlossen.\n\n${finalFeedback}\n\nMöchten Sie Ihre detaillierte Auswertung per E-Mail erhalten? 📧`,
-          sessionState: newSessionState
-        })
-
-      } catch (error) {
-        console.error('Error processing answer:', error)
-        return res.status(500).json({ 
-          message: 'Fehler bei der Verarbeitung Ihrer Antwort.' 
-        })
-      }
-    }
-
-    return res.status(400).json({ 
-      message: 'Ungültiger Anfrage-Typ.' 
-    })
 
   } catch (error) {
-    console.error('API error:', error)
+    console.error('Digital Fit Check API Error:', error);
     return res.status(500).json({ 
-      message: 'Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+      error: 'Internal server error',
+      message: 'Es ist ein technischer Fehler aufgetreten. Bitte versuchen Sie es später erneut.'
+    });
   }
 }
