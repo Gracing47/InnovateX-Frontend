@@ -17,6 +17,7 @@ interface Answer {
   category: string
   questionIndex: number
   rating: number
+  question: string
 }
 
 interface UserProfile {
@@ -232,7 +233,8 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
     const currentAnswer: Answer = {
       category: currentQuestion.category,
       questionIndex: sessionState.currentQuestion,
-      rating: rating
+      rating: rating,
+      question: currentQuestion.question
     };
 
     // Update session state with new answer
@@ -247,10 +249,17 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
       isComplete: isComplete
     };
 
-    setSessionState(newSessionState);
+    // Use Promise to ensure state is updated before submitting
+    await new Promise<void>(resolve => {
+      setSessionState(newSessionState);
+      // Wait for next render cycle
+      setTimeout(resolve, 0);
+    });
 
-    // Automatically trigger submit after rating selection
-    handleSubmit(rating);
+    // Now safely submit after state update
+    if (isComplete) {
+      await handleSubmit(rating);
+    }
   };
 
   const handleSubmit = async (rating: number) => {
