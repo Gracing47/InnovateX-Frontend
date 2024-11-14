@@ -17,6 +17,7 @@ export interface Answer {
   category: Category;
   questionIndex: number;
   rating: number;
+  question: string; // Added question property
 }
 
 export interface Question {

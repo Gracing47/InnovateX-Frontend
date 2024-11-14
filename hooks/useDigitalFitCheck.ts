@@ -45,6 +45,11 @@ export const useDigitalFitCheck = () => {
         assessmentType
       };
 
+      // Validate user profile before sending
+      if (!updatedProfile.name || !updatedProfile.industry || updatedProfile.numberOfEmployees <= 0) {
+        throw new Error('Bitte füllen Sie alle Felder korrekt aus.');
+      }
+
       const response = await DigitalFitCheckService.initializeCheck(updatedProfile);
       
       setSessionState(response.sessionState);
@@ -76,12 +81,18 @@ export const useDigitalFitCheck = () => {
     try {
       setIsLoading(true);
       
+      // Check if session state is valid
+      if (!sessionState) {
+        throw new Error('Ungültiger Sitzungsstatus.');
+      }
+
       const updatedSessionState: SessionState = {
         ...sessionState,
         answers: [...sessionState.answers, {
           category: sessionState.questions[sessionState.currentQuestion].category,
           questionIndex: sessionState.currentQuestion,
-          rating
+          rating,
+          question: sessionState.questions[sessionState.currentQuestion].question // Added question property
         }],
         currentQuestion: sessionState.currentQuestion + 1,
         isComplete: sessionState.currentQuestion + 1 >= sessionState.questions.length
