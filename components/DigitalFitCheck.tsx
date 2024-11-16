@@ -7,43 +7,11 @@ import InputField from "./InputField";
 import ProgressBar from "./ProgressBar";
 import RatingButtons from "./RatingButtons";
 import { Bot, Loader2, Brain } from "lucide-react";
-
-interface Message {
-  type: 'bot' | 'user';
-  content: string;
-}
-
-interface Answer {
-  category: string;
-  questionIndex: number;
-  rating: number;
-  question: string;
-}
-
-interface UserProfile {
-  name: string;
-  industry: string;
-  numberOfEmployees: number;
-  assessmentType?: 'quick' | 'detailed';
-  role?: string;
-}
-
-interface SessionState {
-  currentCategory: number;
-  currentQuestion: number;
-  answers: Answer[];
-  totalScore: number;
-  isComplete: boolean;
-  userProfile?: UserProfile;
-  questions?: {
-    question: string;
-    category: string;
-  }[];
-}
+import { Category, Question, Answer, UserProfile, SessionState, Message } from '../types/digitalFitCheck'; // Import Category type
 
 interface DigitalFitCheckProps {
   sessionState: SessionState;
-  setSessionState: (state: SessionState) => void;
+  setSessionState: React.Dispatch<React.SetStateAction<SessionState>>;
   message: string;
   setMessage: (message: string) => void;
 }
@@ -61,7 +29,9 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
   const [userProfile, setUserProfile] = React.useState<UserProfile>({
     name: '',
     industry: '',
-    numberOfEmployees: 0
+    numberOfEmployees: 0,
+    assessmentType: 'quick', // Default value
+    role: 'unternehmer'
   });
 
   const [questions, setQuestions] = React.useState<SessionState['questions']>([]);
@@ -149,7 +119,7 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
             name: userProfile.name.trim(),
             industry: userProfile.industry.trim(),
             numberOfEmployees: Number(userProfile.numberOfEmployees),
-            assessmentType: assessmentType as 'quick' | 'detailed',
+            assessmentType: assessmentType,
             role: 'unternehmer'
           };
 
@@ -228,7 +198,7 @@ export const DigitalFitCheck: React.FC<DigitalFitCheckProps> = ({
     setSelectedRating(rating);
 
     const currentAnswer: Answer = {
-      category: currentQuestion.category,
+      category: currentQuestion.category, // Ensure this matches the Category type
       questionIndex: sessionState.currentQuestion,
       rating: rating,
       question: currentQuestion.question
