@@ -91,7 +91,7 @@ const Footer: React.FC = () => {
 
         {/* Copyright */}
         <div className="mt-8 text-center">
-          <p>&copy; 2023 InnovateX. Alle Rechte vorbehalten.</p>
+          <p>&copy; 2024 InnovateX. Alle Rechte vorbehalten.</p>
         </div>
       </div>
     </footer>

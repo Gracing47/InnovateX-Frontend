@@ -18,15 +18,23 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline';",
               "img-src 'self' blob: data:;",
               "font-src 'self';",
-              "connect-src 'self';",
-              "frame-src 'self';"
+              "connect-src 'self';"
             ].join(' ')
           }
-        ],
-      },
+        ]
+      }
     ]
   },
   reactStrictMode: true,
+  webpack: (config, { isServer }) => {
+    // Behandle punycode Warnung
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      punycode: false,
+    };
+    
+    return config;
+  },
 }
 
 module.exports = nextConfig
